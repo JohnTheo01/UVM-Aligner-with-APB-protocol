@@ -1,0 +1,22 @@
+# Simulation output
+*.log
+*.vcd
+*.fsdb
+*.shm/
+simv
+csrc/
+*.daidir/
+ucli.key
+novas.rc
+*.rc
+
+# Tool-specific
+*.swp
+*.swo
+*~
+.DS_Store
+__pycache__/
+
+# Compiled/generated
+*.o
+*.so
