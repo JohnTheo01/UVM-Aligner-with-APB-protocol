@@ -25,7 +25,7 @@ F --> J[UVM Based]
 
 ## Βασικά Components
 
-![Architecture](Diagrams/design_verificaition_diagram.drawio.svg)
+![Architecture](Diagrams/1_4_2026/design_verificaition_diagram.drawio.svg)
 
 ### DUT - Device/Design Under Test
 
@@ -44,7 +44,7 @@ F --> J[UVM Based]
 
 Το DUT που θα μελετηθεί είναι **Aligner**
 
-![Architecture](Diagrams/Aligner_Block_Diagram.png)
+![Architecture](Diagrams/1_4_2026/Aligner_Block_Diagram.png)
 
 ## Interface - Διεπαφή
 
@@ -112,7 +112,7 @@ F --> J[UVM Based]
 
 Στην εικόνα παρακάτω βλέπουμε για ALIGN_DATA_WIDTH = 32 το πώς λειτουργεί το κύκλωμα για διαφορετικά ζεύγη (SIZE, OFFSET).
 
-![Architecture](Diagrams/Functionality.png)
+![Architecture](Diagrams/1_4_2026/Functionality.png)
 
 ### RX Controller
 
@@ -150,7 +150,7 @@ F --> J[UVM Based]
 
 # Environment Architecture
 
-![Architecture](Diagrams/Environment_architecture.png)
+![Architecture](Diagrams/1_4_2026/Environment_architecture.png)
 
 ## Agent
 
@@ -217,6 +217,7 @@ endmodule
 
 Στον κώδικα Β προσθέτουμε  `+UVM_TESTNAME=cls_algn_test_reg_access` για να τρέξει σωστά στον simulator.
 Γενικά ο **Κώδικας Β** είναι ο προτιμότετος
+- @t 2026-04-03 Θέλει μεγάλη προσοχή να μην υπάρχει κενό ανάμεσα στ + και το UVM_TESTNAME.
 
 ### UVM Naming Conventions
 
@@ -260,7 +261,7 @@ endmodule
 Επειδή όμως γενικά θέλουμε αυτά τα tests να έχουν και άλλα κοινά όπως το **Environment**, ορίζουμε και μία ενδιάμεση κλάση πχ
 - `uvm_algn_test_base`
 
-![Architecture](Diagrams/uvm_test_hierarchy.drawio.svg)
+![Architecture](Diagrams/1_4_2026/uvm_test_hierarchy.drawio.svg)
 
 ## 2026-04-02
 
@@ -277,6 +278,11 @@ endmodule
 ## Testbench
 
 Τρέχοντας τον παρακάτω κώδικα από μόνο του θα παρχθεί ένα `UVM_FATAL`, καθώς δεν έχουμε ορίσει ποια συνάρτηση θα καλέι με την `run_test()`. Για να δουλέψει σωστά χρειάζεται το κατάλληλο όρισμα στο **Run Options**, όπου για τώρα θα γράψουμε `UVM_TESTNAME=cfs_algn_test_reg_access`.
+
+- @t 2026-04-03 Ιδιαίτερη προσοχή θέλουν οι εντολές που επιτρέπουν το να περνάμε τις τιμές των μεταβλητών σε αρχεία:
+    - `$dumpfile(<όνομα αρχείου>);`
+    - `$dumpvars;`
+        - Για να δούμε τα αρχεία θα πρέπει να ενεργοποιήσουμε και το **Open EPWave after run**.
 
 ```sv
 module testbench();
@@ -310,6 +316,10 @@ module testbench();
   // --------------------- Call to test ---------------------
   
   initial begin
+
+    $dumpfile("dump.vcd");
+    $dumpvars;
+
     run_test("");
   end
     
@@ -324,3 +334,296 @@ endmodule
 
 ```
 
+## 2026-04-03
+
+## [Σχεδίαση Test Package](code/test/cfs_algn_test_pkg.sv)
+
+Γενικά μία συχνή πρακτική όταν σχεδίαζουμε ένα **package** που περιέχει κλάσεις είναι συνήθεις πρακτική αυτό το αρχείο απλά να δείχνει σε αρχεία για κάθε κλάση ξεχωριστά.
+
+```sv
+`ifndef CFS_ALGN_TEST_PKG_SV
+    
+    `define CFS_ALGN_TEST_PKG_SV
+
+    package cfs_algn_test_pkg;
+
+        `include "cfs_algn_test_base.sv"
+        `include "cfs_algn_test_reg_access.sv"
+
+    endpackage
+
+`endif
+```
+
+Το **package** πέρα από τις κλάσεις tests περιέχει και δείκτες προς την κλάση **environment**.
+
+## [Base Test Class](code/test/cfs_algn_test_base.sv) 
+
+Όπως σε κάθε **uvm component**, κατά τον ορσιμό του πρέπει να προσθέσουμε:
+
+- `` `uvm_component_utils(<Όνομα κλάσης>);``
+    -  Για να έχουμε όμως πρόσβαση στο αρχείο πρέπει να κάνουμε από το [**package**](code/test/cfs_algn_test_pkg.sv), το "uvm_macros.svh".
+    - Ένα συχνό λάθος είναι να βάζεις `;` στο τέλος κάτι το οποίο δεν γίνεται στα **macros**.
+ 
+- ```function new(string name = "", uvm_component parent);```
+
+ Αυτά τα δύο είναι υποχρεωτικό να υπάρχουν σε όλες τις κλάσεις που είναι **components**.
+
+Ακόμα αυτή η κλάση χρειάζεται να χειρίζεται και το **environment**.  Άρα:
+
+- `cfs_algn_env env`: Ορίζουμε ένα νέο environment.
+
+- `build phase` 
+
+    - ```sv 
+        virtual function void build_phase(uvm_phase phase);
+            super.build_phase(phase);
+
+            env = cfs_algn_env::type_id::create(
+                "env", // Συνήθης πρακτική να ταυτίζεται με το όνομα του instance 
+                this // Το γονικό του είναι προφανώς η ίδια η κλάση
+            );
+        endfunction
+    1. Αρχικά ορίζουμε ότι η συνάρτηση καλεί την `build_phase` του γονικού
+    2. Μετά ορίζουμε την `env` μέσω της τυπικής μεθόδου στο **uvm**, με την συνάρτηση `type_id::create()` που υπάρχει σε κάθε κλάση **component**. 
+
+### [Reg Access Test](code/test/cfs_algn_reg_access.sv)
+
+Ουσιαστικά απλά κληρονομεί την **base** κλάση προς το παρόν καθώς δεν έχουμε προσθέσει λειτουργικότητα.
+
+ ## [Environment](code/test/cfS_algn_env.sv)
+
+Όπως και τα υπόλοιπα **components**. Προς το παρόν κυρίως αφορά **boilerplate** κώδικα.
+
+
+## Run task
+
+Αφού τελειώσαμε με το βασικό κομμάτι (**build_phase**), πάμε να υλοποιήσουμε έναν αρχικό κώδικα που θα τρέχει το **test** μας. Αυτό προφανώς γίνεται στο αρχείο [test reg access](code/test/cfs_algn_reg_access.sv).
+
+```sv
+    virtual task run_phase(uvm_phase phase);
+    
+        phase.raise_objection(this, "TEST_DONE");
+
+        `uvm_info("DEBUG", "start of test", UVM_LOW)
+
+        #100ns;
+
+        `uvm_info("DEBUG", "end of test", UVM_LOW)
+
+        phase.drop_objection(this, "TEST_DONE");
+
+    endtask
+```
+
+### UVM Info
+
+Η εντολή `` `uvm_info`` είναι ο συνήθης τρόπος με τον οποίο στέλνουμε μηνύματα στην έξοδο με το **uvm**. Έχει τρία ορίσματα:
+
+1. `"DEBUG"` -> Είναι ένα id του μηνύματος.
+2. `"<μήνυμα">` -> Είναι το μήνυμα που εμφανίζεται στην οθόνη
+3. `<Verbosity Level>` -> Επηρεάζει εάν το μήνυμα θα φανεί ή όχι (πιο πολλά παρακάτω) 
+
+
+### Objection mechanism
+
+Είναι ο τρόπος με τον οποίο στο **uvm** ολοκληρώνεται ένα **test**. Μπορείς να το φανταστείς σαν έναν counter που:
+
+- `raise objection` -> Αυξάνει τον counter
+- `drop objection` --> Μειώνει τον counter 
+
+Η προσωμοίωση τελειώνει όταν η τιμή του **counter** γίνει 0.
+
+---
+
+# Τωρινή Κατάσταση
+
+## [testbench.sv](code/test/testbench.sv)
+
+```sv
+`include "cfs_algn_test_pkg.sv"
+
+module testbench();
+  
+  import uvm_pkg::*;
+  import cfs_algn_test_pkg::*;
+  
+  // --------------------- Clock Logic ---------------------
+  reg clk;
+  
+  initial begin
+    clk = 0;
+   
+    forever begin
+      clk = #5ns ~clk; // f = 100Mhz
+    end
+    
+  end
+  
+  // --------------------- Reset Logic ---------------------
+  
+  reg reset_n;
+  
+  initial begin
+    
+    reset_n = 1;
+    
+    #6ns;  reset_n = 0;
+    
+    #30ns; reset_n = 1;
+    
+  end
+  
+  // --------------------- Call to test ---------------------
+  
+  initial begin
+    
+    $dumpfile("dump.vcd");
+    $dumpvars;
+    
+    run_test("");
+  end
+    
+  
+  // --------------------- DUT instance ---------------------
+  cfs_aligner dut(
+    .clk     (clk	),
+    .reset_n (reset_n)
+  );
+  
+endmodule
+```
+
+## [cfs_algn_test_pkg.sv](code/test/cfs_algn_test_pkg.sv)
+
+```sv
+`ifndef CFS_ALGN_TEST_PKG_SV
+    
+    `define CFS_ALGN_TEST_PKG_SV
+
+    `include "uvm_macros.svh"
+    `include "cfs_algn_pkg.sv"
+
+    package cfs_algn_test_pkg;
+
+        import uvm_pkg::*;
+        import cfs_algn_pkg::*;
+
+        `include "cfs_algn_test_base.sv"
+        `include "cfs_algn_test_reg_access.sv"
+
+    endpackage
+
+`endif
+```
+
+## [cfs_algn_pkg.sv](code/test/cfs_algn_pkg.sv)
+
+```sv
+`ifndef CFS_ALGN_PKG_SV
+
+    `define CFS_ALGN_PKG_SV
+
+    `include "uvm_macros.svh"
+
+    package cfs_algn_pkg;
+
+        import uvm_pkg::*;
+
+        `include "cfs_algn_env.sv"
+
+
+    endpackage
+
+`endif
+```
+
+## [cfs_algn_env.sv](code/test/cfs_algn_env.sv)
+
+```sv
+`ifndef CFS_ALGN_ENV_SV
+
+    `define CFS_ALGN_ENV_SV
+
+    class cfs_algn_env extends uvm_env;
+
+       `uvm_component_utils(cfs_algn_env)
+
+       function new(string name = "", uvm_component parent);
+            super.new(name, parent);
+       endfunction 
+
+    endclass
+
+`endif
+```
+
+## [cfs_algn_test_base.sv](code/test/cfs_algn_test_base.sv)
+
+```sv
+`ifndef CFS_ALGN_TEST_BASE_SV
+
+    `define CFS_ALGN_TEST_BASE_SV
+
+    `include "uvm_macros.svh"
+
+    class cfs_algn_test_base extends uvm_test;
+
+        cfs_algn_env env;
+
+        `uvm_component_utils(cfs_algn_test_base)
+
+        function new(string name, uvm_component parent);
+            super.new(name, parent);
+        endfunction
+
+        virtual function void build_phase(uvm_phase phase);
+            super.build_phase(phase);
+
+            env = cfs_algn_env::type_id::create("env", this);
+        endfunction
+
+    endclass
+
+`endif
+```
+
+## [cfs_algn_test_reg_access.sv](code/test/cfs_algn_test_reg_access.sv)
+
+```sv
+`ifndef CFS_ALGN_TEST_REG_ACCESS_SV
+
+    `define CFS_ALGN_TEST_REG_ACCESS_SV
+
+    `include "uvm_macros.svh"
+
+    class cfs_algn_test_reg_access extends cfs_algn_test_base;
+
+        `uvm_component_utils(cfs_algn_test_reg_access)
+
+        function new(string name, uvm_component parent);
+            super.new(name, parent);
+        endfunction
+
+        virtual task run_phase(uvm_phase phase);
+    
+            phase.raise_objection(this, "TEST_DONE");
+
+            `uvm_info("DEBUG", "start of test", UVM_LOW)
+
+            #100ns;
+
+            `uvm_info("DEBUG", "end of test", UVM_LOW)
+
+            phase.drop_objection(this, "TEST_DONE");
+
+        endtask
+
+    endclass
+
+`endif
+```
+
+## Σχεδιάγραμμα Υπάρχοντος Κώδικα
+
+![Architecture](Diagrams/3_4_2026/pkg_class_hierarchy_3_1_2026.drawio.svg)
