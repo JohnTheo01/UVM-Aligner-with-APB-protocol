@@ -20,3 +20,6 @@ __pycache__/
 # Compiled/generated
 *.o
 *.so
+
+# Notes/personal reference files
+Diagrams/drawio_svg_generator_notes.md
