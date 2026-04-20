@@ -1053,3 +1053,444 @@ virtual function void connect_phase(uvm_phase phase);
 
 ![Arcitecture](Diagrams/19_4_2026/cfs_driver_monitor_hierarchy.png)
 
+Για να ξεκινήσουμε την διαδικασία θα πρέπει προφανώς να γίνoυν include τα αρχεία στον **agent**.
+
+### `cfs_apb_item_base.sv`
+
+```sv
+`ifndef CFS_APB_ITEM_BASE_SV
+
+    `define CFS_APB_ITEM_BASE_SV
+
+    class cfs_apb_item_base extends uvm_sequence_item;
+
+        // Προσοχή έχουμε object utils και όχι component
+        `uvm_object_utils(cfs_apb_item_base)
+
+        // Προσοχή δεν έχει parent component
+        function new(string name = "");
+            super.new(name);
+        endfunction
+
+    endclass
+
+`endif
+```
+
+
+### `cfs_apb_item_drv.sv`
+
+```sv
+`ifndef CFS_APB_ITEM_DRV_SV
+
+    `define CFS_APB_ITEM_DRV_SV
+
+    class cfs_apb_item_drv extends cfs_apb_item_base;
+
+
+        rand cfs_apb_dir dir;
+
+        rand cfs_apb_addr addr;
+
+        rand cfs_apb_data data;      
+
+        // Delays
+        rand int unsigned  predrive_delay;
+        rand int unsigned  postdrive_delay;
+
+        constraint pre_drive_delay_default{
+            soft predrive_delay <= 5;
+        }
+
+        constraint post_drive_delay_default{
+            soft postdrive_delay <= 5;
+        }
+
+        // Προσοχή έχουμε object utils και όχι component
+        `uvm_object_utils(cfs_apb_item_drv)
+
+        // Προσοχή δεν έχει parent component
+        function new(string name = "");
+            super.new(name);
+        endfunction
+
+        virtual function string convert2string();
+            string result = $sformatf("dir: %0s, addr: %0x", dir.name(), addr);
+
+            // Το Data field έχει νόημα μόνο για write transactions
+            if (dir == CFS_APB_WRITE) begin
+                result = $sformatf("%s, data: %0x", result, data);
+            end
+            
+            result = $sformatf("%s, predrive_delay: %0d, postdrive_delay: %0d", 
+                result, predrive_delay, postdrive_delay);
+
+             return result;
+        endfunction
+
+    endclass
+
+`endif
+```
+
+Για την υλοποίηση του driver πρέπει να:
+
+- Ορίσουμε τις τυχαίες μεταβλητές που θα μπορεί να παράξει ο `driver`.
+- Για τα delays θέλουμε κάποια soft constraints ώστε να μην βγούνε πολύ μεγάλοι οι αριθμοί καθώς τους ορίζουμε ως `unsigned int`.
+- Μία συνάρτηση `convert2string` η οποία εμφανίζει σωστά τα δεδομένα.
+
+
+Τέλος μένει να προσθέσουμε τα νέα **types** που χρησιμοποιούμε
+
+### `cfs_apb_types.sv`
+
+```sv
+
+... //Προηγούμενος κώδικας
+
+// APB Direction
+	typedef enum bit {CFS_APB_READ = 0, CFS_APB_WRITE = 1} cfs_apb_dir;
+
+	// APB Address
+	typedef bit[`CFS_APB_MAX_ADDR_WIDTH-1:0] cfs_apb_addr;
+	
+	// APB Data
+	typedef bit[`CFS_APB_MAX_DATA_WIDTH-1:0] cfs_apb_data;
+```
+
+Άρα αφού κάνουμε το import του **agent_pkg** στο **test** μας αυτό που μένει είναι να κατασκευάσουμε μερικά τέτοια **objects**.
+
+
+### `cfs_algn_test_reg_access.sv`
+
+```sv
+
+... // Προηγούμενος κώδικας
+
+for (int i = 0; i < 10; i++) begin
+               cfs_apb_item_drv item = cfs_apb_item_drv::type_id::create("item");
+
+               void'(std::randomize(item));
+
+               `uvm_info("DEBUG", $sformatf("Generated item: %s", item.convert2string()), UVM_LOW);
+            end
+
+... // Επόμενος κώδικας (end_of_simulation)
+
+```
+
+## 2026-04-20
+
+# UVM Sequence Mechanism
+
+Αυτός ο μηχανισμός υλοποιείται με την βοήθεια από 2 components:
+- `Sequencer`
+- `Driver`
+
+Σε ένα `test` στο `run_phase` χρησιμοποιούμε κάποιες κλάσεις που ονομάζονται **sequences**. Δηλαδή ακολουθίες από `events`.
+
+Κληρονομούν από την `uvm_sequence#(REQ, RSP)`
+- `REQ`: Αφορά τα δεδομένα τα οποία στέλνουμε στο DUT μέσα από τον **driver**.
+- `RSP`: Αφορά τα δεδομένα που περιμένουμε να πάρουμε από οτο dut και προς το παρόν δεν θα ασχοληθούμε καθώς χρειαζόμαστε το **monitor**.
+
+---
+
+## Τι είναι ένα Sequence;
+
+Ένα **sequence** είναι μία κλάση που ορίζει **πώς και με ποια σειρά** παράγονται τα `sequence items` (transactions) που τελικά οδηγούνται στο DUT μέσω του **driver**. Σε αντίθεση με τα **components** (driver, monitor, agent) που υπάρχουν για όλη τη διάρκεια της simulation, ένα sequence είναι **εφήμερο**: δημιουργείται, εκτελείται, και καταστρέφεται κατά την `run_phase`.
+
+Η κεντρική ιδέα είναι ο **διαχωρισμός ευθυνών**:
+
+| Κλάση | Ευθύνη |
+|:------|:-------|
+| **Sequence** | Αποφασίζει *τι* transactions θα σταλούν και *σε ποια σειρά* |
+| **Sequencer** | Διαχειρίζεται την ουρά και κάνει arbitration μεταξύ πολλαπλών sequences |
+| **Driver** | Μεταφράζει κάθε transaction σε pin-level σήματα στο interface |
+
+### Ιεραρχία Κληρονομικότητας
+
+![Sequence Hierarchy](Diagrams/20_4_2026/uvm_sequence_hierarchy.drawio.svg)
+
+Σε αντίθεση με τα **components**, τα sequences κληρονομούν από `uvm_object` (όχι `uvm_component`) — γι' αυτό χρησιμοποιούμε `` `uvm_object_utils `` και η `new()` δεν έχει `parent`.
+
+### Η `body()` task — η καρδιά του sequence
+
+Κάθε sequence υλοποιεί την **`body()`** task, η οποία εκτελείται όταν το sequence ξεκινά. Εδώ γράφουμε την λογική για το τι transactions θέλουμε να στείλουμε:
+
+```sv
+class cfs_apb_seq_write extends uvm_sequence #(cfs_apb_item_drv);
+
+    `uvm_object_utils(cfs_apb_seq_write)
+
+    function new(string name = "");
+        super.new(name);
+    endfunction
+
+    virtual task body();
+        cfs_apb_item_drv item;
+
+        // Βήμα 1: Δημιουργία του item
+        item = cfs_apb_item_drv::type_id::create("item");
+
+        // Βήμα 2: Ειδοποιούμε τον sequencer ότι ετοιμαζόμαστε να στείλουμε
+        start_item(item);
+
+        // Βήμα 3: Randomize — γίνεται ΜΕΤΑ το start_item
+        void'(item.randomize() with { dir == CFS_APB_WRITE; });
+
+        // Βήμα 4: Παραδίδουμε το item στον driver
+        finish_item(item);
+
+    endtask
+
+endclass
+```
+
+### Η Χειραψία `start_item` / `finish_item`
+
+Αυτό είναι ένα κρίσιμο σημείο. Η διαδικασία λειτουργεί ως εξής:
+
+![Sequence Handshake](Diagrams/20_4_2026/uvm_sequence_handshake.drawio.svg)
+
+1. **`start_item(item)`**: Το sequence ζητά άδεια από τον **sequencer** για να στείλει. Μπλοκάρει μέχρι ο sequencer να δώσει πράσινο φως (arbitration).
+2. **Randomize**: Γίνεται ανάμεσα στα δύο calls, μετά την έγκριση αλλά πριν την παράδοση.
+3. **`finish_item(item)`**: Παραδίδει το item στον driver και μπλοκάρει μέχρι ο driver να καλέσει `item_done()` — δηλαδή μέχρι να ολοκληρωθεί η οδήγηση του signal στο interface.
+
+### Macro `` `uvm_do`` — Συντομογραφία
+
+Αντί για το χειροκίνητο `start_item`/`finish_item`, μπορούμε να χρησιμοποιήσουμε macros:
+
+```sv
+// Αυτό:
+`uvm_do(item)
+
+// Ισοδυναμεί με:
+item = <type>::type_id::create("item");
+start_item(item);
+void'(item.randomize());
+finish_item(item);
+```
+
+Για constraints inline:
+```sv
+`uvm_do_with(item, { dir == CFS_APB_WRITE; addr == 16'h0000; })
+```
+
+Τα macros είναι βολικά αλλά κρύβουν λεπτομέρειες — σε επαγγελματικά projects συχνά προτιμάται το χειροκίνητο στυλ για σαφήνεια.
+
+### Εκκίνηση ενός Sequence από το Test
+
+Ένα sequence δεν τρέχει μόνο του — πρέπει να **ξεκινήσει** συνδεδεμένο με έναν **sequencer**:
+
+```sv
+virtual task run_phase(uvm_phase phase);
+    cfs_apb_seq_write seq;
+
+    phase.raise_objection(this);
+
+    // Δημιουργία
+    seq = cfs_apb_seq_write::type_id::create("seq");
+
+    // Εκκίνηση — η body() τρέχει εδώ, συνδεδεμένη με τον sequencer
+    seq.start(env.apb_agent.sequencer);
+
+    phase.drop_objection(this);
+endtask
+```
+
+Η `start()` είναι blocking — επιστρέφει μόνο όταν η `body()` ολοκληρωθεί.
+
+### Σύνθετα Sequences — Virtual Sequence
+
+Ένα sequence μπορεί να **καλεί άλλα sequences** μέσα στη `body()` του, δημιουργώντας ιεραρχία:
+
+```sv
+class cfs_apb_seq_reg_test extends uvm_sequence;
+
+    virtual task body();
+        cfs_apb_seq_write  write_seq;
+        cfs_apb_seq_read   read_seq;
+
+        // Πρώτα γράφουμε
+        write_seq = cfs_apb_seq_write::type_id::create("write_seq");
+        write_seq.start(m_sequencer);  // m_sequencer: built-in handle
+
+        // Μετά διαβάζουμε
+        read_seq = cfs_apb_seq_read::type_id::create("read_seq");
+        read_seq.start(m_sequencer);
+    endtask
+
+endclass
+```
+
+Ένα **Virtual Sequence** είναι ένα sequence που δεν παράγει ίδια transactions αλλά **συντονίζει πολλά sub-sequences** σε διαφορετικούς sequencers ταυτόχρονα — χρήσιμο όταν θέλουμε να ελέγξουμε πολλαπλά interfaces (π.χ. APB + MD RX + MD TX) συγχρονισμένα.
+
+### Σύνοψη Βασικών Κανόνων
+
+| Κανόνας | Εξήγηση |
+|:--------|:--------|
+| `uvm_object_utils`, όχι `uvm_component_utils` | Τα sequences είναι objects, όχι components |
+| `new()` χωρίς `parent` | Δεν ανήκουν σε ιεραρχία component |
+| `body()` είναι task | Μπορεί να καταναλώνει simulation time |
+| `start_item` πριν randomize | Η σειρά αυτή είναι υποχρεωτική για σωστό arbitration |
+| `finish_item` μπλοκάρει | Εξασφαλίζει ότι ο driver τελείωσε πριν συνεχίσουμε |
+
+---
+
+## Τι είναι ένας Sequencer;
+
+Ο **sequencer** είναι ένα `uvm_component` που λειτουργεί ως **μεσάζων** ανάμεσα στα sequences και τον driver. Δεν παράγει ο ίδιος transactions και δεν οδηγεί signals — ο ρόλος του είναι αποκλειστικά **διαχείριση ροής** και **arbitration**.
+
+### Θέση στην Ιεραρχία
+
+```
+uvm_component
+  └── uvm_sequencer_base
+        └── uvm_sequencer #(REQ, RSP)
+              └── cfs_apb_sequencer   ← δικός μας (συνήθως κενός)
+```
+
+Ο `uvm_sequencer#(REQ, RSP)` είναι **παραμετρικός** με τον ίδιο τύπο `REQ` που χρησιμοποιεί και το sequence — πρέπει να ταιριάζουν απόλυτα.
+
+### Τι κάνει ακριβώς ο Sequencer
+
+| Λειτουργία | Περιγραφή |
+|:-----------|:----------|
+| **FIFO προς τον Driver** | Αποθηκεύει τα έτοιμα items και τα δίνει στον driver μέσω `get_next_item()` |
+| **Arbitration** | Αποφασίζει ποιο από τα ενεργά sequences θα πάρει πρώτο την άδεια (`start_item`) |
+| **Συγχρονισμός** | Εξασφαλίζει ότι sequence και driver βρίσκονται πάντα σε συμφωνία — ένα item τη φορά |
+| **`m_sequencer` handle** | Όταν ένα sequence τρέχει, έχει built-in πρόσβαση στον sequencer μέσω του `m_sequencer` |
+
+### Πολλαπλά Ενεργά Sequences — Arbitration
+
+Ο sequencer υποστηρίζει να τρέχουν **ταυτόχρονα πολλά sequences** πάνω στον ίδιο driver. Για να αποφασίσει ποιο θα εξυπηρετηθεί πρώτο, χρησιμοποιεί έναν από τους παρακάτω αλγόριθμους που ορίζεται με `set_arbitration()`:
+
+| Αλγόριθμος | Συμπεριφορά |
+|:-----------|:------------|
+| `SEQ_ARB_FIFO` | First-in first-out — default |
+| `SEQ_ARB_WEIGHTED` | Κάθε sequence έχει βάρος προτεραιότητας |
+| `SEQ_ARB_RANDOM` | Τυχαία επιλογή |
+| `SEQ_ARB_STRICT_FIFO` | FIFO με αυστηρές προτεραιότητες |
+| `SEQ_ARB_STRICT_RANDOM` | Τυχαία μεταξύ ισοδύναμων προτεραιοτήτων |
+| `SEQ_ARB_USER` | Custom αλγόριθμος που ορίζεται από τον χρήστη |
+
+### Υλοποίηση — Ο Sequencer είναι συνήθως κενός
+
+Στην πράξη, σπάνια χρειάζεται να γράψουμε κώδικα μέσα στον sequencer. Αρκεί να ορίσουμε την κλάση και να κληρονομήσει:
+
+```sv
+class cfs_apb_sequencer extends uvm_sequencer #(cfs_apb_item_drv);
+
+    `uvm_component_utils(cfs_apb_sequencer)
+
+    function new(string name = "", uvm_component parent);
+        super.new(name, parent);
+    endfunction
+
+endclass
+```
+
+Ολόκληρη η λογική arbitration και FIFO κληρονομείται αυτόματα από την `uvm_sequencer`.
+
+### Σύνδεση με τον Driver — `TLM Port`
+
+Ο sequencer και ο driver επικοινωνούν μέσω **TLM (Transaction Level Modeling) ports**. Αυτή η σύνδεση γίνεται στη `connect_phase` του agent:
+
+```sv
+virtual function void connect_phase(uvm_phase phase);
+    super.connect_phase(phase);
+
+    // Ο driver "βλέπει" τον sequencer μέσω του seq_item_port
+    driver.seq_item_port.connect(sequencer.seq_item_export);
+endfunction
+```
+
+- **`seq_item_port`**: Ανήκει στον **driver** — είναι η "πρίζα" από την οποία ζητά items.
+- **`seq_item_export`**: Ανήκει στον **sequencer** — είναι η "πηγή" που εξυπηρετεί αυτές τις ζητήσεις.
+
+### Default Sequence — `uvm_config_db`
+
+Αντί να ξεκινάμε ένα sequence χειροκίνητα από το test, μπορούμε να ορίσουμε ένα **default sequence** για έναν sequencer μέσω της config database:
+
+```sv
+// Στο build_phase του test:
+uvm_config_db #(uvm_object_wrapper)::set(
+    this,
+    "env.apb_agent.sequencer.run_phase",
+    "default_sequence",
+    cfs_apb_seq_write::type_id::get()
+);
+```
+
+Έτσι ο sequencer θα ξεκινά αυτόματα το sequence κατά τη `run_phase` χωρίς να χρειάζεται ρητή κλήση `seq.start()`.
+
+### Σύνοψη: Sequence vs Sequencer
+
+| | **Sequence** | **Sequencer** |
+|:-|:------------|:--------------|
+| Τύπος | `uvm_object` | `uvm_component` |
+| Διάρκεια | Εφήμερο (run & die) | Για όλη τη simulation |
+| Ρόλος | Παράγει transactions | Διαχειρίζεται τη ροή τους |
+| Βασική μέθοδος | `body()` task | `get_next_item()` / `item_done()` |
+| Εκκίνηση | `seq.start(sequencer)` | Δημιουργείται στη `build_phase` |
+
+---
+
+## Τι είναι ένας Driver;
+
+Ο **driver** είναι το `uvm_component` που **μεταφράζει abstract transactions σε pin-level signals** στο virtual interface. Είναι ο μόνος που "αγγίζει" φυσικά το interface — ούτε το sequence ούτε ο sequencer γνωρίζουν την ύπαρξή του.
+
+### Ιεραρχία Κληρονομικότητας
+
+![Driver Hierarchy](Diagrams/20_4_2026/uvm_driver_hierarchy.drawio.svg)
+
+Ο `uvm_driver#(REQ, RSP)` είναι **παραμετρικός** — ο τύπος `REQ` πρέπει να είναι ο ίδιος με αυτόν του sequence και του sequencer.
+
+### TLM Port — Σύνδεση με τον Sequencer
+
+Ο driver έχει ένα built-in **`seq_item_port`** το οποίο συνδέεται με το **`seq_item_export`** του sequencer κατά την `connect_phase` του agent:
+
+```sv
+// Μέσα στο agent, connect_phase:
+driver.seq_item_port.connect(sequencer.seq_item_export);
+```
+
+Μέσω αυτής της σύνδεσης, ο driver μπορεί να καλεί:
+- **`get_next_item(req)`** — ζητά το επόμενο item (blocking)
+- **`item_done()`** — σηματοδοτεί ότι τελείωσε η οδήγηση
+
+### Η `run_phase` — Το Forever Loop
+
+Σε αντίθεση με τα sequences που εκτελούνται μία φορά, ο driver τρέχει ένα **forever loop** για όλη τη διάρκεια της simulation:
+
+![Driver Run Loop](Diagrams/20_4_2026/uvm_driver_run_loop.drawio.svg)
+
+```sv
+virtual task run_phase(uvm_phase phase);
+    forever begin
+
+        // μπλοκάρει
+        seq_item_port.get_next_item(req);  
+        
+        ... // Οδηγούμε τα σήματα στο interface
+        drive_transfer(req);               
+        
+        // ξεμπλοκάρει sequence
+        seq_item_port.item_done();        
+        
+    end
+endtask
+```
+
+**SOS**: Το `item_done()` πρέπει να καλείται **πάντα** μετά το `get_next_item()`. Αν παραληφθεί, το sequence μένει μπλοκαρισμένο για πάντα.
+
+### Σύνοψη: Sequence / Sequencer / Driver
+
+| | **Sequence** | **Sequencer** | **Driver** |
+|:-|:------------|:--------------|:-----------|
+| Τύπος | `uvm_object` | `uvm_component` | `uvm_component` |
+| Γνωρίζει interface; | Όχι | Όχι | **Ναι** |
+| Ρόλος | Παράγει transactions | Διαχειρίζεται ροή | Οδηγεί signals |
+| Κύρια μέθοδος | `body()` | arbitration FIFO | `drive_transfer()` |
+| Loop | Εφήμερο | — | `forever` στη `run_phase` |
+
