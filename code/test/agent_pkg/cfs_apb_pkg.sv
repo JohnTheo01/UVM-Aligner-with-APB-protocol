@@ -11,6 +11,9 @@
 		`include "cfs_apb_types.sv"
 		`include "cfs_apb_agent_config.sv"
 		`include "cfs_apb_agent.sv"
+
+		`include "cfs_apb_item_base.sv"
+		`include "cfs_apb_item_drv.sv"
     endpackage
 
 `endif
