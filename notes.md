@@ -627,3 +627,429 @@ endmodule
 ## Σχεδιάγραμμα Υπάρχοντος Κώδικα
 
 ![Architecture](Diagrams/3_4_2026/pkg_class_hierarchy_3_1_2026.drawio.svg)
+
+## 2026-04-19
+
+# Κεφάλαιο 2
+
+# APB Agent Infrastructure
+
+## Στόχος η σχεδίαση του APB Agent
+
+### UVM Configuration Database
+
+- Στην ουσία είναι ένα instance μίας κλάσης `uvm_config_db#(T)` όπου `Τ` ο τύπος των δεδομένων που θέλουμε να περάσουμε στην βάση.
+ 
+    - `set`: Προσθέτουμε το component. 
+
+    - `get`:  Παίρνουμε το component.
+
+        - Στην ουσία τους **pointers** αποθηκεύουμε στην κλάση.
+
+
+### Set function - `uvm_config_db#(T)::set()`
+
+```sv
+static function void set{
+    uvm component cntxt,
+    string inst_name,
+    string field_name,
+    T value
+}
+```
+
+- `T`: H πραγματική τιμή που περνάμε 
+
+- `field_name`:  Το όνομα της τιμής την οποία παιρνάμε στην βάση.
+
+Για παράδειγμα
+
+```sv
+uvm_config_db#(int)::set(
+    null, 
+    "uvm_test_top.env.apb_agent", // Ολόκληρο το όνομα
+    "bus_width",
+    32
+)
+```
+
+Έχει σημασία από που καλούμαι την συνάρτηση. Εάν την καλέσομε από το Testbench επειδή δεν είναι **component** αλλά **module** βάζουμε null.
+
+Αντίστοιχα εάν καλέσουμε την συνάρτηση από το **Test** το οποίο είναι **component**, μπορούμε να γράψουμε:
+
+```sv
+uvm_config_db#(int)::set(
+    this, 
+    "env.apb_agent", 
+    "bus_width", 
+    32)
+```
+
+Η συνάρτηση `set` επίσης υποστηρίζει `*` notation. Για παράδειγμα στον παρακάτω κώδικα αναφέρουμε ότι θέλουμε όλα τα **comonents** μετά το `uvm_test_top` να έχουν πρόσβαση στο **bus**.
+
+```sv
+uvm_config_db#(int)::set(
+    null,
+    "uvm_test_top.*",
+    "bus_width",
+    32
+)
+```
+
+**SOS**: Θέλει μεγάλη προσοχή όταν καλούμε την `set` από διαφορετικά μέρη στην ιεραρχία. Αυτό συμβαίνει γιατί ανάλογα με το που θα καλέσουμε τη `get`. 
+
+- Όταν γίνεται το `build_phase` η `get` θα πάρει το **component**, με το υψηλότερο **context** στην ιεραρχία.
+
+- Όταν γίνεται το `run_phase` η `get` θα πάρει την τελευταία τιμή που έχει μπει στην βάση.
+
+### Get function - `uvm_config_db#(T)::get()`
+
+```sv
+static function bit get(
+    uvm_component cntxt,
+    string inst_name,
+    string field_name,
+    inout T value 
+)
+```
+
+Η βασική διαφορά είναι ότι καταρχάς η `get` επιστρέφει ένα **bit** ανάλογα με το αν ήταν επιτυχής η ανάκτηση της τιμής και επίσης η τιμή `value` είναι inout. Δηλαδή σε αυτό το όρισμα θα περαστεί η τιμή που θέλουμε να πάρουμε.
+
+## Σχεδίαση του APB agent
+
+Καταρχάς το όνομα του αρχείου θα είναι `cfs_apb_pkg.sv`. Δεν γίνεται αναφορά στο **dut** το οποίο επαληθεύουμε. Ο λόγος είναι ότι σε μία εταιρία ένα τέτοιο πρωτόκολο θα εμφανίζεται σε πολλαπλά project.
+
+
+## Σχεδίαση του Interface
+
+Για να βρούμε τα signals που έχει το **ΑPB protocol** μπορούμε να δούμε το **datasheet** ωστόσο θέλει προσοχή γιατί σε αυτό το implementation $\exist$ σήματα που δεν τα υποστηρίζουμε.
+
+Τυπικά υπάρχουν signals τα οποία σε ένα πρωτόκολο ορίζονται με παραμέτρους και σε ένα επαγγελματικό project αυτό πρέπει να γίνει καθώς θέλουμε να μπορεί να χρησιμοποιηθεί και αλλού.Ωστόσο εδώ δεν θα γίνει αυτό. Εδώ θα πετύχουμε την ίδια λειτουργικότητα με **defines** και όχι **defines** για απλότητα.
+
+
+### `cfs_apb_if.sv`
+
+```sv
+`ifndef CFS_APB_IF_SV
+
+	`define CFS_APB_IF_SV
+	
+	`ifndef CFS_APB_MAX_DATA_WIDTH
+		`define CFS_APB_MAX_DATA_WIDTH 32
+	`endif
+
+	`ifndef CFS_APB_MAX_ADDR_WIDTH
+		`define CFS_APB_MAX_ADDR_WIDTH 16
+	`endif
+
+
+
+	interface cfs_apb_if(input clk);
+
+   	  	logic preset_n
+      
+      	logic psel;
+      	
+      	logic penable;
+      
+      	logic pwrite;	
+      
+      	logic [`CFS_APB_MAX_ADDR_WIDTH-1:0] paddr;
+      	
+      	logic [`CFS_APB_MAX_DATA_WIDTH-1:0] pwdata;
+      
+      	logic pready;
+      
+      	logic [`CFS_APB_MAX_DATA_WIDTH-1:0] prdata;
+      
+      	logic pslverr;
+      
+    endinterface
+`endif
+```
+
+Αφού σχεδίασουμε το **interface** θα πρέπει να το χρησιμοποιήσουμε και στο **testbench**.
+
+### `testbench.sv`
+
+```sv
+module testbench();
+    
+    // Ήδη υπάρχων κώδικας
+    ...
+
+    //Ορισμός του interface instance
+    cfs_apb_if apb_if(.pclk(clk));
+
+    ...
+
+    // Αυτό δεν το χρειαζόμαστε πλέον
+    reg reset_n;
+    
+    ...
+
+    //Εδώ αλλάζουμε τον κώδικα ώστε να χρησιμοποιεί το preset_n του interface. 
+    initial begin
+        apb_if.preset_n = 1;
+        
+        #6ns;
+        
+        apb_if.preset_n = 0;
+        
+        #30ns;
+        apb_if.preset_n = 1;
+    end
+
+    ...
+
+    // Παιρνάμε το interface στην βάση
+
+        initial begin
+        $dumpfile("dump.vcd");
+        $dumpvars;
+        
+        uvm_config_db#(virtual cfs_apb_if)::set(
+            null,
+            "uvm_test_top.env.apb_agent",
+            "vif",
+            apb_if
+        );
+        
+        //Start UVM test and phases
+        run_test("");
+    end
+
+    ...
+
+    // Τέλος συνδέουμε το dut με το interface
+    cfs_aligner dut(
+        .clk(    clk),
+        .reset_n(apb_if.preset_n),
+        
+        .paddr(apb_if.paddr),
+        .pwrite(apb_if.pwrite),
+        .psel(apb_if.psel),
+        .penable(apb_if.penable),
+        .pwdata(apb_if.pwdata),
+        .pready(apb_if.pready),
+        .prdata(apb_if.prdata),
+        .pslverr(apb_if.pslverr),
+    );
+```
+
+## Agent Configuration Class
+
+Αυτή η κλάση μπορεί να είναι είτε **uvm_component** είτε **uvm_object**. Και τα δύο είναι συνήθεις πρακτικές. Σε αυτό το παράδειγμα θα το κάνουμε **component**.
+
+Ο κώδικας ορίζει μία κλάση configuration (`cfs_apb_agent_config`) που αποθηκεύει και διαχειρίζεται το **Virtual Interface (VIF)** του APB agent. Συγκεκριμένα:
+
+- **`local cfs_apb_vif vif`**: Το VIF αποθηκεύεται ως `local` μεταβλητή, ώστε η πρόσβαση να γίνεται μόνο μέσω των getters/setters.
+- **`get_vif()` / `set_vif()`**: Υλοποιούν το μοτίβο encapsulation. Το `set_vif()` επιτρέπει τον ορισμό του VIF **μόνο μία φορά** — αν κληθεί ξανά, εκπέμπεται `uvm_fatal`.
+- **`start_of_simulation_phase()`**: Επαληθεύει ότι το VIF έχει οριστεί πριν ξεκινήσει η simulation. Αν όχι, εκπέμπεται `uvm_fatal` — αυτό αποτρέπει σιωπηλά λάθη λόγω μη-συνδεδεμένου interface.
+
+### `cfs_apb_agent_confif.sv`
+
+```sv
+`ifndef CFS_APB_AGENT_CONFIG_SV
+
+	`define CFS_APB_AGENT_CONFIG_SV
+
+	class cfs_apb_agent_config extends uvm_component;
+      
+      	local cfs_apb_vif vif;
+      	
+     	`uvm_component_utils(cfs_apb_agent_config)
+      
+        function new(string name = "", uvm_component parent);
+        	super.new(name, parent);
+        endfunction
+
+        virtual function cfs_apb_vif get_vif();
+            return vif;
+        endfunction
+
+        virtual function void set_vif(cfs_apb_vif value);
+            // Εξασφαλίζουμε ότι το VIF ορίζεται μόνο μία φορά
+            if (vif == null) begin
+                vif = value;                
+            end
+            else begin 
+                `uvm_fatal("ALGORITHM_ISSUE", "Trying to set VIF twice")
+            end
+        endfunction
+
+        virtual function void start_of_simulation_phase(uvm_phase phase);
+            super.start_of_simulation_phase(phase);
+            
+            if (get_vif() == null) begin
+                `uvm_fatal("ALGORITHM_ISSUE", "VIF not set for APB agent config")
+            end 
+            else begin
+                `uvm_info(
+                    "APB_CONFIG", "VIF successfully set for APB agent config 
+                    at \"start_of_simulation\" phase", UVM_LOW)
+            end
+
+        endfunction
+    endclass
+
+`endif
+```
+
+## Agent Class
+
+Εδώ ορίζουμε την βασική κλάση του **APB Agent**. Το **config** αποτελεί εσωτερική μεταβλητή του Agent.
+
+### `cfs_apb_agent.sv`
+
+```sv
+`ifndef CFS_APB_AGENT
+
+    `define CFS_APB_AGENT
+
+    class cfs_apb_agent extends uvm_agent;
+        
+        `uvm_component_utils(cfs_apb_agent)
+
+        // Handler για το Agent configuration
+        cfs_apb_agent_config agent_config;
+
+        function  new(string name = "", uvm_component parent);
+            super.new(name, parent);
+        endfunction
+
+        virtual function void build_phase(uvm_phase phase);
+            super.build_phase(phase);
+
+            agent_congig = cfs_apb_agent_config::type_id::create(
+                "agent_config",
+                this
+            );
+
+        endfunction
+
+
+    endclass 
+
+`endif 
+
+```
+
+Για να μπορέσουμε όμως να χρησιμοποιήσουμε τον `agent` προφανώς χρειάζεται να το ορίσουμε και το `environment`.
+
+### `cfs_algn_env.sv`
+
+```sv
+`ifndef CFS_ALGN_ENV_SV
+  `define CFS_ALGN_ENV_SV
+	
+
+  class cfs_algn_env extends uvm_env;
+
+    `uvm_component_utils(cfs_algn_env)
+    
+    cfs_apb_agent apb_agent;
+    
+    function new(string name = "", uvm_component parent);
+      super.new(name, parent);
+    endfunction
+    
+    virtual function void build_phase(uvm_phase phase);
+      super.build_phase(phase);
+
+      apb_agent = cfs_apb_agent::type_id::create(
+        "apb_agent",
+        this
+      );
+
+    endfunction
+    
+  endclass
+
+`endif
+```
+
+Εάν το τρέξουμε έτσι περιμένουμε να πάρουμε **error** γιατί δεν έχουμε ορίσει ακόμα το `interface`. Για να διορθωθεί αυτό στο `connect_phase` του **agent** προσθέτουμε:
+
+```sv
+virtual function void connect_phase(uvm_phase phase);
+    
+        cfs_apb_vif vif;
+        
+        super.connect_phase(phase);
+        
+        if (uvm_config_db#(cfs_apb_vif)::get(
+            this, "", "vif", vif
+        ) == 0) begin
+            `uvm_fatal("APB_NO_VIF", "Could not get APB VIF from database") 
+        end
+        else begin
+            agent_config.set_vif(vif);
+        end
+        
+    endfunction
+```
+
+### `cfs_agent_types.vs`
+
+Ένα αρχείο που περιέχει ορσιμένα χρήσιμα **typedefs**.
+
+```sv
+`ifndef CFS_APB_TYPES_SV
+
+	`define CFS_APB_TYPES_SV
+
+	typedef virtual cfs_apb_if cfs_apb_vif;
+
+
+`endif
+```
+
+---
+
+## Ανακεφαλαίωση 2026-04-19
+
+### Τι καλύφθηκε θεωρητικά
+
+- **UVM Configuration Database**: Μελετήθηκε η λειτουργία της `uvm_config_db#(T)` με τις `set()` / `get()`. Σημαντικές λεπτομέρειες για το context (null από module, `this` από component), το `*` notation, και τη διαφορά συμπεριφοράς μεταξύ `build_phase` και `run_phase`.
+
+### Τι υλοποιήθηκε
+
+Δημιουργήθηκε το `agent_pkg/` με τα παρακάτω αρχεία:
+
+| Αρχείο | Περιγραφή |
+|--------|-----------|
+| [`cfs_apb_if.sv`](code/test/agent_pkg/cfs_apb_if.sv) | APB interface με `defines` για `DATA_WIDTH=32` και `ADDR_WIDTH=16`. Περιέχει τα signals: `preset_n`, `psel`, `penable`, `pwrite`, `paddr`, `pwdata`, `pready`, `prdata`, `pslverr`. |
+| [`cfs_apb_types.sv`](code/test/agent_pkg/cfs_apb_types.sv) | `typedef virtual cfs_apb_if cfs_apb_vif` — ο τύπος που χρησιμοποιείται παντού για το virtual interface. |
+| [`cfs_apb_agent_config.sv`](code/test/agent_pkg/cfs_apb_agent_config.sv) | Config class (`uvm_component`). Αποθηκεύει `local cfs_apb_vif vif` με encapsulation μέσω `get_vif()`/`set_vif()`. Το `set_vif()` επιτρέπει ορισμό μόνο μία φορά (αλλιώς `uvm_fatal`). Η `start_of_simulation_phase()` επαληθεύει ότι το VIF έχει οριστεί. |
+| [`cfs_apb_agent.sv`](code/test/agent_pkg/cfs_apb_agent.sv) | Agent class (`uvm_agent`). Στη `build_phase` δημιουργεί το `agent_config`. Στη `connect_phase` ανακτά το VIF από την `uvm_config_db` και το περνά στο config μέσω `set_vif()`. |
+| [`cfs_apb_pkg.sv`](code/test/agent_pkg/cfs_apb_pkg.sv) | Το top-level package που κάνει `include` όλα τα παραπάνω με σωστή σειρά (interface εκτός package, types/config/agent μέσα). |
+
+
+## APB Driving Item
+
+Για την σχεδίαση του **driver** το πρώτο βήμα το οποίο πρέπει να κάνουμε είναι να δούμε ποια από τα σήματα του **interface** μας χρειάζονται.
+
+Συγκεκριμένα το **APB protocol** έχει 3 σήματα
+- `PRDATA`
+- `PREADY`
+- `PSLVERR`
+
+Τα οποία χρησιμοποιούνται για **slave**, αλλά ο `agent` είναι  **master**.
+
+Επιπλέον τα σήματα:
+- `PSEL`
+- `PENABLE`
+
+Είναι σήματα τα οποία πάντα θα οδηγούνται με έναν συγκεκριμένο τρόπο ο οποίος ορίζεται από το πρωτόκολο και άρα μπορούμε και αυτά να τα παραλείψουμε.
+
+Άρα εν τέλει μένουμε με 3 σήματα τα οποία μας ενδιαφέρουν:
+
+- `PWRITE`
+- `PADDR`
+- `PDATA`
+
+Η ιεραρχία που θα έχει ο κώδικας (χωρίς το **monitor** το οποίο θα προστεθεί αργότερα) είναι:
+
+![Arcitecture](Diagrams/19_4_2026/cfs_driver_monitor_hierarchy.png)
+
