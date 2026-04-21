@@ -6,10 +6,16 @@
       
       	local cfs_apb_vif vif;
       	
+        // Ελέγχει εάν είναι active η passive ο agent
+        local uvm_active_passive_enum active_passive;
+
      	`uvm_component_utils(cfs_apb_agent_config)
       
         function new(string name = "", uvm_component parent);
           super.new(name, parent);
+          
+          // Από προεπιλογή active
+          this.active_passive = UVM_ACTIVE;
         endfunction
 
         virtual function cfs_apb_vif get_vif();
@@ -37,6 +43,16 @@
                     "APB_CONFIG", "VIF successfully set for APB agent config at \"start_of_simulation\" phase", UVM_LOW)
             end
 
+        endfunction
+
+        // Getter
+        virtual function uvm_active_passive_enum get_active_passive();
+            return this.active_passive;
+        endfunction
+
+        // Setter
+        virtual function void set_active_passive(uvm_active_passive_enum value);
+            this.active_passive = value;
         endfunction
     endclass
 

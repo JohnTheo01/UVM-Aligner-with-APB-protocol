@@ -9,6 +9,10 @@
         // Handler για το Agent configuration
         cfs_apb_agent_config agent_config;
 
+        // Handlers για drive/Sequencer
+        cfs_apb_sequencer sequencer;
+        cfs_apb_driver driver;
+
         function  new(string name = "", uvm_component parent);
             super.new(name, parent);
         endfunction
@@ -20,6 +24,11 @@
                 "agent_config",
                 this
             );
+
+            if (agent_config.get_active_passive() == UVM_ACTIVE) begin
+                sequencer = cfs_apb_sequencer::type_id::create("sequence", this);
+                driver = cfs_apb_driver::type_id::create("driver", this);
+            end
 
         endfunction
 
@@ -36,6 +45,10 @@
             end
           	else begin
               	agent_config.set_vif(vif);
+            end
+
+            if (agent_config.get_active_passive() == UVM_ACTIVE) begin
+                driver.seq_item_port.connect(sequencer.seq_item_export);
             end
           
         endfunction
