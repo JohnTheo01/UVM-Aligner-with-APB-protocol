@@ -1494,3 +1494,464 @@ endtask
 | Κύρια μέθοδος | `body()` | arbitration FIFO | `drive_transfer()` |
 | Loop | Εφήμερο | — | `forever` στη `run_phase` |
 
+### `uvm_apb_sequencer.sv`
+
+Γενικά ο sequencer δεν απαιτεί ιδιαίτερα πολύ κώδικα συνήθως για να είναι λειτουργικός.
+
+```sv
+`ifndef CFS_APB_SEQUENCER_SV
+
+    `define CFS_APB_SEQUENCER_SV
+
+    class cfs_apb_sequencer extends uvm_sequencer#(.REQ(cfs_apb_item_drv));
+
+
+    `uvm_component_utils(cfs_apb_sequencer)
+
+
+    function new(string name = "", uvm_component parent);
+
+        super.new(name, parent);
+
+    endfunction
+
+    endclass
+
+`endif
+```
+
+### `uvm_apb_driver.sv`
+
+```sv
+`ifndef CFS_APB_DRIVER
+
+    `define CFS_APB_DRIVER
+
+    class cfs_apb_driver extends uvm_driver#(.REQ(cfs_apb_item_drv));
+
+        `uvm_component_utils(cfs_apb_driver)
+
+        function new(string name = "", uvm_component parent);
+            super.new(name, parent);
+        endfunction
+
+        virtual task run_phase(uvm_phase phase);
+
+            forever begin
+                cfs_apb_item_drv item;
+
+                seq_item_port.get_next_item(item);                
+
+              	`uvm_info("DEBUG", $sformatf("Driving: %s", item.convert2string()), UVM_NONE)
+
+              	seq_item_port.item_done();
+            end
+        endtask
+
+    endclass
+
+`endif
+```
+
+Ένα σημαντικό χαρακτηριστικό που πρέπει να ορίσουμε σε έναν `agent` είναι αν θα είναι **active**  ή **passive**. Ένας **active agent** είναι αυτός που έχει `sequencer` και `driver`. Για να το πετύχουμε αυτό συνήθως το κάνουμε στο `config` αρχείο.
+
+Για να το πετύχουμε αυτό ορίζουμε μία νέα μεταβλητή με `active_passive`, βάζουμε προεπιλογή να είναι **active** και ορίζουμε τους αντίστοιχους getters/setters.
+
+### `cfs_apb_agent_config.sv`
+
+```sv
+class cfs_apb_agent_config extends uvm_component;
+    
+    local cfs_apb_vif vif;
+    
+    // Ελέγχει εάν είναι active η passive ο agent
+    local uvm_active_passive_enum active_passive;
+
+    `uvm_component_utils(cfs_apb_agent_config)
+    
+    function new(string name = "", uvm_component parent);
+        super.new(name, parent);
+        
+        // Από προεπιλογή active
+        this.active_passive = UVM_ACTIVE;
+    endfunction
+
+    virtual function cfs_apb_vif get_vif();
+        ...
+    endfunction
+
+    virtual function void set_vif(cfs_apb_vif value);
+        ...
+    endfunction
+
+    virtual function void start_of_simulation_phase(uvm_phase phase);
+        ...
+    endfunction
+
+    // Getter
+    virtual function uvm_active_passive_enum get_active_passive();
+        return this.active_passive;
+    endfunction
+
+    // Setter
+    virtual function void set_active_passive(uvm_active_passive_enum value);
+        this.active_passive = value;
+    endfunction
+endclass
+```
+
+Τώρα μένει να ορίσουμε τα instances του `driver` και του `sequencer` στον `agent` βασισμένοι στο αν είναι **active** ή **passive**. 
+
+### cfs_apb_agent.sv
+
+```sv
+
+`ifndef CFS_APB_AGENT
+
+    `define CFS_APB_AGENT
+
+    class cfs_apb_agent extends uvm_agent;
+        
+        `uvm_component_utils(cfs_apb_agent)
+
+        // Handler για το Agent configuration
+        cfs_apb_agent_config agent_config;
+
+        // Handlers για drive/Sequencer
+        cfs_apb_sequencer sequencer;
+        cfs_apb_driver driver;
+
+        function  new(string name = "", uvm_component parent);
+            super.new(name, parent);
+        endfunction
+
+        virtual function void build_phase(uvm_phase phase);
+            // Προηγούμενες δηλώσεις
+            ...
+
+            // Εάν είναι active δημιουργούμε τα instances
+            if (agent_config.get_active_passive() == UVM_ACTIVE) begin
+                sequencer = cfs_apb_sequencer::type_id::create("sequence", this);
+                driver = cfs_apb_driver::type_id::create("driver", this);
+            end
+
+        endfunction
+
+      	virtual function void connect_phase(uvm_phase phase);
+        
+            // Προηγούμενες ενώσεις
+          	...
+
+            // Ένωση driver και sequencer
+            if (agent_config.get_active_passive() == UVM_ACTIVE) begin
+                driver.seq_item_port.connect(sequencer.seq_item_export);
+            end
+          
+        endfunction
+    endclass 
+
+`endif 
+```
+
+- **SOS**: Κάτι που θέλει μεγάλη προσοχή στο `cfs_agent_pkg.sv` είναι να προσέχουμε την σειρά με την οποία γίνονται τα **includes**.
+
+Τώρα αυτό που μένει είναι να ορίσουμε τα **sequences**. Ξεκινάμε πρώτα με το `base`.
+
+### `p_sequencer` vs `m_sequencer`
+
+Ο `p_sequencer` είναι ένας **pointer** στον πραγματικό sequencer ο οποίος τρέχει ένα `sequence`. Τον χρησιμοποιούμε γιατί από προεπιλογή έχουμε τον **generic** που όμως είναι **base_type** και άρα δεν έχει πρόσβαση στις επιπλέον μεθόδους που έχουμε ορίσει στον δικό μας `sequencer` μέσα στο `body` του `sequence`.
+
+### `uvm_apb_sequence_base.sv`
+
+Αποτελεί την βάση πάνω στην οποία ορίζουμε τις υπόλοιπες **sequences**.
+
+```sv
+`ifndef CFS_APB_SEQUENCE_BASE_SV
+
+    `define CFS_APB_SEQUENCE_BASE_SV
+
+    class cfs_apb_sequence_base extends uvm_sequence#(.REQ(cfs_apb_item_drv));
+
+        `uvm_object_utils(cfs_apb_sequence_base)
+
+        // Ορισμός του pointer
+      	`uvm_declare_p_sequencer(cfs_apb_sequencer)
+
+        function new(string name = "");
+            super.new(name);
+        endfunction
+
+    endclass
+
+`endif
+```
+
+### `uvm_apb_sequence_simple.sv`
+
+Το πρώτο `sequence` το οποίο ορίζουμε στο οποίο απλά φτιάχνουμε ένα item και το στέλνουμε. 
+
+```sv
+class cfs_apb_sequence_simple extends cfs_apb_sequence_base;
+
+    `uvm_object_utils(cfs_apb_sequence_simple)
+
+    rand cfs_apb_item_drv item;
+
+    function new(string name = "");
+        super.new(name);
+
+        item = cfs_apb_item_drv::type_id::create("item");
+    endfunction
+
+    virtual task body();
+        // Αρχίζουμε το item
+        start_item(item);
+
+        // Τελειώνουμε το item
+        finish_item(item);
+    endtask
+
+endclass
+```
+
+Πλέον αυτό που μένει είναι να χρησιμοποιήσουμε το νέο `sequence`, στο test μας. Αυτό γίνεται ως εξής:
+
+### `cfs_apb_test_reg_access.sv`
+
+```sv
+`ifndef CFS_ALGN_TEST_REG_ACCESS_SV
+
+    `define CFS_ALGN_TEST_REG_ACCESS_SV
+
+    `include "uvm_macros.svh"
+
+    class cfs_algn_test_reg_access extends cfs_algn_test_base;
+
+        `uvm_component_utils(cfs_algn_test_reg_access)
+
+        function new(string name, uvm_component parent);
+            super.new(name, parent);
+        endfunction
+
+        virtual task run_phase(uvm_phase phase);
+    
+            phase.raise_objection(this, "TEST_DONE");
+
+            `uvm_info("DEBUG", "start of test", UVM_LOW)
+
+        
+            #(100ns);
+
+            begin
+                // Ορίζουμε το νέο sequence 
+                cfs_apb_sequence_simple seq_simple = cfs_apb_sequence_simple::type_id::create("seq_simple");
+
+                // Κάνουμε randomize με μία παράμετρο
+                void'(seq_simple.randomize() with {
+                    item.addr == 'h222;
+                });
+
+                // Ενεργοποιούμε το sequence με τον επιθυμητό sequencer.
+                seq_simple.start(env.apb_agent.sequencer);
+            end
+            
+            `uvm_info("DEBUG", "end of test", UVM_LOW)
+
+            phase.drop_objection(this, "TEST_DONE");
+
+        endtask
+
+    endclass
+
+`endif
+```
+
+
+### Προσοχή
+
+Εάν στο `sequence` χρησιμοποιήσουμε το macro `uvm_do` δεν θα πάρει τον περιορισμό που ορίσαμε: `item.addr == 'h222;`. Ο λόγος είναι ότι το macro θα ξανακατασκευάσει το item όταν θα ξεκινήσει το sequence. Για να διορθωθεί αυτό αντί για το `uvm_do` μπορούμε να χρησιμοποιήσουμε το macro `uvm_send`.
+
+
+### `cfs_apb_sequence_rw.sv`
+
+Αυτό το `sequence` διαβάζει την διεύθυνση που ορίζουμε από το test και μετά γράφει στο ίδιο address. 
+
+```sv
+class cfs_apb_sequence_rw extends cfs_apb_sequence_base;
+    
+   ...
+
+    virtual task body();
+
+        cfs_apb_item_drv item = cfs_apb_item_drv::type_id::create("item");
+
+        void'(item.randomize() with {
+            dir == CFS_APB_READ;
+            
+            // ΜΕΓΑΛΗ ΠΡΟΣΟΧΗ ΕΔΩ
+            addr == local::addr;
+        }); 
+
+        `uvm_send(item)
+
+        // Εναλακτικά 
+        cfs_apb_item_drv item;
+
+        `uvm_do_with(item, {
+            dir == CFS_APB_READ;
+            addr == local::addr;
+        })
+
+    endtask
+
+endclass 
+```
+
+Θέλει μεγάλη προσοχή όταν ορίζουμε τα constraints γιατί αν αντί για `local::addr` γράψουμε `adrr` ή `this.addr` θα καταλάβει την address του item και όχι του sequence. 
+
+Το τελικό αρχείο είναι το παρακάτω:
+
+```sv
+
+class cfs_apb_sequence_rw extends cfs_apb_sequence_base;
+    
+    `uvm_object_utils(cfs_apb_sequence_rw)
+
+
+    rand cfs_apb_addr addr;
+
+    rand cfs_apb_data w_data;
+
+    function new(string name = "");
+        super.new(name);
+    endfunction 
+
+    // Θέλουμε 2 items ένα που θα διαβάζει από αυτή την διεύθυνση και ένα που θα στέλνει σε αυτή την
+    // διεύθυνση που περνάμε τα δεδομένα που περνάμε
+    virtual task body();
+
+        cfs_apb_item_drv item;
+
+        `uvm_do_with(item, {
+            addr == local::addr;
+            dir == CFS_APB_READ;
+        })
+
+        `uvm_do_with(item, {
+            addr == local::addr;
+            dir == CFS_APB_WRITE;
+            data == w_data;
+        })
+
+    endtask
+
+endclass 
+```
+
+### `cfs_apb_sequence_random.sv`
+
+Στέλνει έναν τυχαίο αριθμό από items χρησιμοποιώντας την `cfs_apb_sequence_simple`.
+```sv
+class cfs_apb_sequence_random extends cfs_apb_sequence_base;
+
+
+    `uvm_object_utils(cfs_apb_sequence_random)
+
+    rand int unsigned num_items;
+
+    constraint num_items_default{
+        soft num_items inside {[1:10]};
+    }
+
+    function new(string name = "");
+        super.new(name);
+    endfunction
+
+    virtual task body();
+        for (int i = 0; i < this.num_items; i++) begin
+            cfs_apb_sequence_simple seq = cfs_apb_sequence_simple::type_id::create("seq");
+
+            void'(seq.randomize());
+
+            seq.start(p_sequencer, this);
+        end
+
+    endtask
+
+endclass
+```
+
+Τέλος το πλήρες **test** θα γίνει
+
+```sv
+`ifndef CFS_ALGN_TEST_REG_ACCESS_SV
+
+    `define CFS_ALGN_TEST_REG_ACCESS_SV
+
+    `include "uvm_macros.svh"
+
+    class cfs_algn_test_reg_access extends cfs_algn_test_base;
+
+        `uvm_component_utils(cfs_algn_test_reg_access)
+
+        function new(string name, uvm_component parent);
+            super.new(name, parent);
+        endfunction
+
+        virtual task run_phase(uvm_phase phase);
+    
+            phase.raise_objection(this, "TEST_DONE");
+
+            `uvm_info("DEBUG", "start of test", UVM_LOW)
+
+        
+            #(100ns);
+			fork
+                begin 
+                    cfs_apb_sequence_simple seq_simple = cfs_apb_sequence_simple::type_id::create("seq_simple");
+
+                    void'(seq_simple.randomize() with {
+                        item.addr == 'h222;
+                    });
+
+                    seq_simple.start(env.apb_agent.sequencer);
+                end
+
+                begin 
+                    cfs_apb_sequence_rw seq_rw = cfs_apb_sequence_rw::type_id::create("seq_rw");
+
+                    // Προσοχή εδώ ορίζουμε την address του sequence και όχι του item
+                    void'(seq_rw.randomize() with {
+                        addr == 'h4;
+
+                    });
+
+                    seq_rw.start(env.apb_agent.sequencer);
+                end
+
+                begin 
+                    cfs_apb_sequence_random seq_random = cfs_apb_sequence_random::type_id::create("seq_random");
+
+                    void'(seq_random.randomize() with {
+                        num_items == 3;
+                    });
+
+                    seq_random.start(env.apb_agent.sequencer);
+                end
+            join
+            `uvm_info("DEBUG", "end of test", UVM_LOW)
+
+            phase.drop_objection(this, "TEST_DONE");
+
+        endtask
+
+    endclass
+
+`endif
+```
+
+Επίσης επειδή θέλουμε να βλέπουμε και από που προέρχεται το κάθε item κάναμε μία αλλαγή στον driver 
+
+```sv
+`uvm_info("DEBUG", $sformatf("Driving: \%0s\, %s",item.get_full_name(), item.convert2string()), UVM_NONE)
+```
