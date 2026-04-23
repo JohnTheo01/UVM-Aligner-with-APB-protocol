@@ -27,7 +27,7 @@ module testbench();
   initial begin
     apb_if.preset_n = 1;
     
-    #6ns;
+    #3ns;
     
     apb_if.preset_n = 0;
     

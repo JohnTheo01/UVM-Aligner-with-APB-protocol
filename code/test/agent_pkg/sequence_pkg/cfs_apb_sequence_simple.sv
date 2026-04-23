@@ -16,12 +16,11 @@
 
         virtual task body();
             // // Αρχίζουμε το item
-            // start_item(item);
+            start_item(item);
 
             // // Τελειώνουμε το item
-            // finish_item(item);
+            finish_item(item);
 
-            `uvm_do(item)
         endtask
 
     endclass

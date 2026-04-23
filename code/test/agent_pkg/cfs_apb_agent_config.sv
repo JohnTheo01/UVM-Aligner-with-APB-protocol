@@ -9,13 +9,24 @@
         // Ελέγχει εάν είναι active η passive ο agent
         local uvm_active_passive_enum active_passive;
 
+        local int unsigned stuck_threshold;
+
+        local bit has_checks;
+
+        // Switch για coverage
+        local bit has_coverage;
+
      	`uvm_component_utils(cfs_apb_agent_config)
       
         function new(string name = "", uvm_component parent);
-          super.new(name, parent);
-          
-          // Από προεπιλογή active
-          this.active_passive = UVM_ACTIVE;
+            super.new(name, parent);
+            
+            // Από προεπιλογή active
+            this.active_passive = UVM_ACTIVE;
+
+            this.has_checks         = 1;
+            this.has_coverage       = 1;
+            this.stuck_threshold    = 1000;
         endfunction
 
         virtual function cfs_apb_vif get_vif();
@@ -25,7 +36,9 @@
         virtual function void set_vif(cfs_apb_vif value);
             // Εξασφαλίζουμε ότι το VIF ορίζεται μόνο μία φορά
             if (vif == null) begin
-                vif = value;                
+                vif = value;
+                
+                set_has_checks(get_has_checks());   
             end
             else begin 
                 `uvm_fatal("ALGORITHM_ISSUE", "Trying to set VIF twice")
@@ -45,15 +58,69 @@
 
         endfunction
 
-        // Getter
+        virtual task run_phase(uvm_phase phase);
+            forever begin
+                @(vif.has_checks);
+                
+                if (vif.has_checks !== this.has_checks) begin
+                    `uvm_error("ALGORITHM ISSUE", $sformatf("Cannot change /has_checks/ from APB interface directly. Use %s.set_has_checks()", get_full_name()))
+                end
+            end
+        endtask
+
+
+        virtual function bit get_has_coverage();
+            return this.has_coverage;
+        endfunction
+
+        virtual function void set_has_coverage(bit value);
+            this.has_coverage = value;
+        endfunction
+
+        
+        virtual function int unsigned get_stuck_threshold();
+            return this.stuck_threshold;
+        endfunction
+
+        virtual function void set_stuck_threshold(int unsigned value);
+            this.stuck_threshold = value;
+        endfunction
+
+
         virtual function uvm_active_passive_enum get_active_passive();
             return this.active_passive;
         endfunction
 
-        // Setter
         virtual function void set_active_passive(uvm_active_passive_enum value);
             this.active_passive = value;
         endfunction
+
+
+        virtual function bit get_has_checks();
+            return this.has_checks;
+        endfunction
+
+        virtual function void set_has_checks(bit value);
+            this.has_checks = value;
+
+            // Ελέγχουμε ότι έχουμε ορίσει πρώτα το vif
+            if (this.vif != null) begin
+                this.vif.has_checks = this.has_checks;
+            end
+        endfunction
+
+        virtual task wait_reset_start();
+            if (vif.preset_n !== 0) begin
+                @(negedge vif.preset_n);
+            end
+        endtask
+
+        virtual task wait_reset_end();
+            while (vif.preset_n === 0) begin
+                @(posedge vif.pclk);
+            end
+        endtask
+
     endclass
 
 `endif
