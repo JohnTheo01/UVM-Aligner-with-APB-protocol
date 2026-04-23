@@ -2,7 +2,7 @@
 
     `define CFS_APB_AGENT
 
-    class cfs_apb_agent extends uvm_agent;
+    class cfs_apb_agent extends uvm_agent implements cfs_apb_reset_handler;
         
         `uvm_component_utils(cfs_apb_agent)
 
@@ -12,6 +12,12 @@
         // Handlers για drive/Sequencer
         cfs_apb_sequencer sequencer;
         cfs_apb_driver driver;
+
+        // Handler για Monitor
+        cfs_apb_monitor monitor;
+
+        // Handler για coverage
+        cfs_apb_coverage coverage;
 
         function  new(string name = "", uvm_component parent);
             super.new(name, parent);
@@ -24,6 +30,14 @@
                 "agent_config",
                 this
             );
+            monitor = cfs_apb_monitor::type_id::create(
+                "monitor",
+                this
+            );
+
+            if (agent_config.get_has_coverage()) begin 
+                coverage = cfs_apb_coverage::type_id::create("coverage", this);
+            end
 
             if (agent_config.get_active_passive() == UVM_ACTIVE) begin
                 sequencer = cfs_apb_sequencer::type_id::create("sequence", this);
@@ -47,11 +61,52 @@
               	agent_config.set_vif(vif);
             end
 
+            monitor.agent_config = agent_config;
+
             if (agent_config.get_active_passive() == UVM_ACTIVE) begin
+                // Σύνδεση του driver με το agent config
+                driver.agent_config = agent_config;
                 driver.seq_item_port.connect(sequencer.seq_item_export);
+            end
+
+            if (agent_config.get_has_coverage()) begin
+                coverage.agent_config = agent_config;
+                monitor.output_port.connect(coverage.port_item);
             end
           
         endfunction
+
+        virtual function void handle_reset(uvm_phase phase);
+            uvm_component children[$];
+
+            get_children(children);
+
+            foreach (children[idx]) begin
+                cfs_apb_reset_handler reset_handler;
+
+                if($cast(reset_handler, children[idx])) begin
+                    reset_handler.handle_reset(phase);
+                end
+            end
+        endfunction
+
+        virtual task wait_reset_start();
+            agent_config.wait_reset_start();
+        endtask
+
+        virtual task wait_reset_end();
+            agent_config.wait_reset_end();
+        endtask
+
+        virtual task run_phase(uvm_phase phase);
+            forever begin
+                wait_reset_start();
+                handle_reset(phase);
+                wait_reset_end();
+            end
+        endtask
+
+
     endclass 
 
 `endif 

@@ -2,25 +2,18 @@
 
     `define CFS_APB_ITEM_DRV_SV
 
-    class cfs_apb_item_drv extends cfs_apb_item_base;
-
-
-        rand cfs_apb_dir dir;
-
-        rand cfs_apb_addr addr;
-
-        rand cfs_apb_data data;      
+    class cfs_apb_item_drv extends cfs_apb_item_base; 
 
         // Delays
-        rand int unsigned  predrive_delay;
-        rand int unsigned  postdrive_delay;
+        rand int unsigned  pre_drive_delay;
+        rand int unsigned  post_drive_delay;
 
         constraint pre_drive_delay_default{
-            soft predrive_delay <= 5;
+            soft pre_drive_delay <= 5;
         }
 
         constraint post_drive_delay_default{
-            soft postdrive_delay <= 5;
+            soft post_drive_delay <= 5;
         }
 
         // Προσοχή έχουμε object utils και όχι component
@@ -32,7 +25,7 @@
         endfunction
 
         virtual function string convert2string();
-            string result = $sformatf("dir: %0s, addr: %0x", dir.name(), addr);
+            string result = super.convert2string();
 
             // Το Data field έχει νόημα μόνο για write transactions
             if (dir == CFS_APB_WRITE) begin
@@ -40,7 +33,7 @@
             end
             
             result = $sformatf("%s, predrive_delay: %0d, postdrive_delay: %0d", 
-                result, predrive_delay, postdrive_delay);
+                result, pre_drive_delay, post_drive_delay);
 
              return result;
         endfunction
