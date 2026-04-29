@@ -13,6 +13,8 @@
 
         local bit has_checks;
 
+        local int sample_delay_transaction_start;
+
         // Switch για coverage
         local bit has_coverage;
 
@@ -24,9 +26,10 @@
             // Από προεπιλογή active
             this.active_passive = UVM_ACTIVE;
 
-            this.has_checks         = 1;
-            this.has_coverage       = 1;
-            this.stuck_threshold    = 1000;
+            this.has_checks                     = 1;
+            this.has_coverage                   = 1;
+            this.stuck_threshold                = 1000;
+            this.sample_delay_transaction_start = 1ns;
         endfunction
 
         virtual function cfs_apb_vif get_vif();
