@@ -22,4 +22,6 @@ __pycache__/
 *.so
 
 # Notes/personal reference files
-Diagrams/drawio_svg_generator_notes.md
+notes*.md
+Diagrams/
+rewrite_history.py
