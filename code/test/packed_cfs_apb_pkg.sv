@@ -11,7 +11,7 @@
 
   `include "cfs_apb_if.sv"
 
-  `include "uvm_ext_pkg.sv"
+  `include "packed_uvm_ext_pkg.sv"
 
   package cfs_apb_pkg;
     import uvm_pkg::*;
