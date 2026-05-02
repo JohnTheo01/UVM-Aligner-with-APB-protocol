@@ -3,8 +3,8 @@
 
   `include "uvm_macros.svh"
 
-  `include "cfs_apb_pkg.sv"
-  `include "cfs_md_pkg.sv"
+  `include "packed_cfs_apb_pkg.sv"
+  `include "packed_cfs_md_pkg.sv"
 
   package cfs_algn_pkg;
     import uvm_pkg::*;
