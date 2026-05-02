@@ -115,14 +115,36 @@ def generate(name: str, bits: int, coverage: str, field_names: list[str]) -> str
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Generate a UVM register class template (.sv file)."
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description=(
+            "gen_uvm_reg.py — UVM Register Class Template Generator\n"
+            "=======================================================\n"
+            "Generates a SystemVerilog UVM register class (.sv) file.\n"
+            "All configure() parameters are left as named placeholders\n"
+            "searchable with: _PLACEHOLDER*/\n"
+        ),
+        epilog=(
+            "Examples:\n"
+            "  python3 gen_uvm_reg.py --name cfs_algn_reg_ctrl\n"
+            "  python3 gen_uvm_reg.py --name cfs_algn_reg_ctrl --fields 3\n"
+            "  python3 gen_uvm_reg.py --name cfs_algn_reg_irer \\\n"
+            "      --field_names RX_FIFO_EMPTY RX_FIFO_FULL TX_FIFO_EMPTY TX_FIFO_FULL\n"
+            "  python3 gen_uvm_reg.py --name my_reg --bits 16 --coverage UVM_CVR_ALL \\\n"
+            "      --field_names STATUS CTRL --output /path/to/my_reg.sv\n"
+        ),
     )
-    parser.add_argument("--name", required=True, help="Register class name")
-    parser.add_argument("--bits", type=int, default=32, help="Register width in bits (default: 32)")
-    parser.add_argument("--coverage", default="UVM_NO_COVERAGE", help="UVM coverage model (default: UVM_NO_COVERAGE)")
-    parser.add_argument("--fields", type=int, default=0, help="Number of fields (default: 0); ignored if --field_names is given")
-    parser.add_argument("--field_names", nargs="+", metavar="NAME", help="Explicit field names (overrides --fields)")
-    parser.add_argument("--output", default=None, help="Output file path (default: <name>.sv next to this script)")
+    parser.add_argument("--name", required=True, metavar="NAME",
+                        help="Register class name, e.g. cfs_algn_reg_ctrl")
+    parser.add_argument("--bits", type=int, default=32, metavar="N",
+                        help="Register width in bits (default: 32)")
+    parser.add_argument("--coverage", default="UVM_NO_COVERAGE", metavar="MODEL",
+                        help="UVM coverage model (default: UVM_NO_COVERAGE)")
+    parser.add_argument("--fields", type=int, default=0, metavar="N",
+                        help="Number of auto-named fields FIELD_1..N (default: 0); ignored if --field_names is given")
+    parser.add_argument("--field_names", nargs="+", metavar="NAME",
+                        help="Explicit field names, e.g. RX_FIFO_EMPTY TX_FIFO_FULL (overrides --fields)")
+    parser.add_argument("--output", default=None, metavar="FILE",
+                        help="Output file path (default: <name>.sv next to this script)")
 
     args = parser.parse_args()
 
