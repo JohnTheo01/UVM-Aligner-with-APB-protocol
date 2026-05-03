@@ -11,13 +11,24 @@
 
         rand uvm_reg_field CLR;
 
-        // ----------------------------------- BOILERPLATE CODE  -----------------------------------
-        
-        `uvm_object_utils(cfs_algn_reg_ctrl)
+        local int unsigned ALGN_DATA_WIDTH;
 
+        // ----------------------------------- CONSTRAINTS -----------------------------------
+        constraint legal_size {
+            SIZE.value != 0;
+        }
+
+        constraint legal_combination_size_offset{
+            ((ALGN_DATA_WIDTH / 8) + OFFSET.value) % SIZE.value == 0;
+        }
+
+        // ----------------------------------- BOILERPLATE CODE  -----------------------------------
+        `uvm_object_utils(cfs_algn_reg_ctrl)
         
         function new(string name = "");
-            super.new(name, n_bits(32), has_coverage(UVM_NO_COVERAGE));
+            super.new(name, .n_bits(32), .has_coverage(UVM_NO_COVERAGE));
+            
+            this.ALGN_DATA_WIDTH = 8;
         endfunction
 
         virtual function void build();
@@ -62,6 +73,18 @@
                 .individually_accessible(0)
             );
 
+        endfunction
+
+        virtual function void set_algn_data_width(int unsigned value);
+             if ((value < 8) || ($countones(value) != 1)) begin
+                `uvm_fatal("ALGORITHM_ISSUE", "You need to specify correct values for \"algn_data_width\"")
+            end 
+            
+            this.ALGN_DATA_WIDTH = value;
+        endfunction 
+
+        virtual function int unsigned get_algn_data_width();
+            return this.ALGN_DATA_WIDTH;
         endfunction
 
     endclass
