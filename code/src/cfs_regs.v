@@ -207,6 +207,11 @@
                       pready             <= 0;
                       pslverr            <= 0;
                     end
+                    else if(ctrl_offset_wr_val + ctrl_size_wr_val > (ALGN_DATA_WIDTH / 8)) begin
+                      wr_ctrl_is_illegal <= 1;
+                      pready             <= 0;
+                      pslverr            <= 0;
+                    end
                     else begin
                       wr_ctrl_is_illegal <= 0;
                       pready             <= 1;
