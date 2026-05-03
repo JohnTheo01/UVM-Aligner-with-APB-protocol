@@ -37,3 +37,10 @@ UVM-based verification environment for the CFS Aligner DUT with APB register int
 - Consolidated the APB agent into a single packed file (`packed_cfs_apb_pkg.sv`) integrating `uvm_ext_pkg`
 - Consolidated the MD agent into a single packed file (`packed_cfs_md_pkg.sv`) integrating `uvm_ext_pkg`
 - Archived the original unpacked component files under `code/test/archive/` for reference
+
+## Phase 6 — UVM Register Model Integration (May 3, 2026)
+
+- Renamed packed agent packages back to individual files by removing the "packed" prefix
+- Built the supporting infrastructure for register access: env config, register predictor, APB adapter, and register configuration sequence
+- Wired the register model into the environment alongside reset handling support
+- Fixed several bugs in the register definitions (CTRL constraints, IRQ access type, IRQEN field name)
