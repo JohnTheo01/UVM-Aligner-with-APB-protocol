@@ -23,7 +23,7 @@
             TX_FIFO_FULL    = uvm_reg_field::type_id::create("TX_FIFO_FULL", null, get_full_name());
             MAX_DROP        = uvm_reg_field::type_id::create("MAX_DROP", null, get_full_name());
 
-            RX_FIFO_FULL.configure(
+            RX_FIFO_EMPTY.configure(
                 .parent(this),
                 .size(1), 
                 .lsb_pos(0),
