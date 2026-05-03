@@ -11,7 +11,7 @@
 
 	`include "cfs_md_if.sv"
 
-	`include "packed_uvm_ext_pkg.sv"
+	`include "uvm_ext_pkg.sv"
 
 	package cfs_md_pkg;
 

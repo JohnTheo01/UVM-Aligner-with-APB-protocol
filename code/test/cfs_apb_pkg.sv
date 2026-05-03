@@ -11,7 +11,7 @@
 
   `include "cfs_apb_if.sv"
 
-  `include "packed_uvm_ext_pkg.sv"
+  `include "uvm_ext_pkg.sv"
 
   package cfs_apb_pkg;
     import uvm_pkg::*;
@@ -566,6 +566,13 @@
           this
         );
 
+        uvm_ext_sequencer#(.ITEM_DRV(cfs_apb_item_drv))::type_id::set_inst_override(
+          cfs_apb_sequencer::get_type(), 
+          "sequencer", 
+          this
+        );
+
+
       endfunction
 
     endclass
@@ -660,6 +667,10 @@
 
     endclass
 
+    `include "cfs_apb_reg_adapter.sv"
+
   endpackage
+
+
 
 `endif
