@@ -20,6 +20,7 @@
 
         constraint legal_combination_size_offset{
             ((ALGN_DATA_WIDTH / 8) + OFFSET.value) % SIZE.value == 0;
+            OFFSET.value + SIZE.value <= (ALGN_DATA_WIDTH / 8);
         }
 
         // ----------------------------------- BOILERPLATE CODE  -----------------------------------
