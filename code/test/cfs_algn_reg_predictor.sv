@@ -75,6 +75,16 @@
                             .info("(Offset, Size) pair not valid")
                         );
                     end
+
+                    if (offset_value + size_value > (env_config.get_algn_data_width() / 8)) begin
+                        return cfs_algn_reg_access_status_info::new_instance(
+                            .status(UVM_NOT_OK), 
+                            .info($sformatf(
+                                "-Offset: %0d + -Size: %0d cannot be greater than data_bus_width: %d ",
+                                offset_value, size_value, (env_config.get_algn_data_width() / 8))
+                            )
+                        );
+                    end
                 end
             end
 
