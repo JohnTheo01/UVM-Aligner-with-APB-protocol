@@ -14,6 +14,9 @@
 
         virtual task run_phase(uvm_phase phase);
     
+            uvm_status_e status;
+            uvm_reg_data_t data;
+
             phase.raise_objection(this, "TEST_DONE");
 
             `uvm_info("DEBUG", "start of test", UVM_LOW)
@@ -21,74 +24,41 @@
         
             #(100ns);
 
-            fork
-                // Προσθέτει το reset στην μέση
-                begin 
-                    cfs_apb_vif vif = env.apb_agent.agent_config.get_vif();
-
-                    repeat (3) begin
-                        @(posedge vif.psel);
-                    end
-
-                    #(11ns);
-
-                    vif.preset_n <= 0;
-
-                    repeat (4) begin
-                        @(posedge vif.pclk);
-                    end
-
-                    vif.preset_n  <= 1;
+             fork
+                begin
+                    cfs_md_sequence_slave_response_forever seq_response_forever = cfs_md_sequence_slave_response_forever::type_id::create(
+                        "seq_response_forever"
+                    );
+                    
+                    seq_response_forever.start(env.md_tx_agent.sequencer);
                 end
+            join_none
 
-                begin 
-                    cfs_apb_sequence_simple seq_simple = cfs_apb_sequence_simple::type_id::create("seq_simple");
 
-                    void'(seq_simple.randomize() with {
-                        item.addr   == 'h0;
-                        item.dir    == CFS_APB_WRITE;
-                        item.data  == 'h11; 
-                    });
+            begin
+                cfs_algn_seq_reg_config seq = cfs_algn_seq_reg_config::type_id::create("seq");
 
-                    seq_simple.start(env.apb_agent.sequencer);
-                end
+                seq.reg_block = env.model.reg_block;
 
-                begin 
-                    cfs_apb_sequence_rw seq_rw = cfs_apb_sequence_rw::type_id::create("seq_rw");
+                seq.start(env.model.reg_block.default_map.get_sequencer());
 
-                    // Προσοχή εδώ ορίζουμε την address του sequence και όχι του item
-                    void'(seq_rw.randomize() with {
-                        addr == 'hC;
 
-                    });
+            end
 
-                    seq_rw.start(env.apb_agent.sequencer);
-                end
+            repeat(2) begin 
+                cfs_md_sequence_simple_master seq_simple = cfs_md_sequence_simple_master::type_id::create("seq_simple");
+
+                seq_simple.set_sequencer(env.md_rx_agent.sequencer);
                 
-                begin 
-                    cfs_apb_sequence_random seq_random = cfs_apb_sequence_random::type_id::create("seq_random");
-
-                    void'(seq_random.randomize() with {
-                        num_items == 3;
-                    });
-
-                    seq_random.start(env.apb_agent.sequencer);
-                end
-            join
-
-            #(100ns);
-            begin 
-                cfs_apb_sequence_random seq_random = cfs_apb_sequence_random::type_id::create("seq_random");
-
-                void'(seq_random.randomize() with {
-                    num_items == 3;
+                void'(seq_simple.randomize() with {
+                   item.data.size() == 4;
+                   item.offset      == 0;
                 });
 
-                seq_random.start(env.apb_agent.sequencer);
+                seq_simple.start(env.md_rx_agent.sequencer);
             end
 
             #(100ns);
-            
 
             `uvm_info("DEBUG", "end of test", UVM_LOW)
 

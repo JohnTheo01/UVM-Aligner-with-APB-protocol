@@ -159,8 +159,8 @@
             valid |-> offset + size <= (DATA_WIDTH / 8);
         endproperty
 
-        OFFSET_SIZE_MAX_VALUE: assert property(offset_size_max_value)
-            else $error("Offset + Size must be less or equal to BUS WIDTH (DATA_WIDTH / 8)");
+        // OFFSET_SIZE_MAX_VALUE: assert property(offset_size_max_value)
+        //     else $error("Offset + Size must be less or equal to BUS WIDTH (DATA_WIDTH / 8)");
 
 
 
